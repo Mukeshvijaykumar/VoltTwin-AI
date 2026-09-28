@@ -1,6 +1,8 @@
 from datetime import datetime
+import zoneinfo
 import math
 
+IST = zoneinfo.ZoneInfo("Asia/Kolkata")
 
 class LocalGridService:
 
@@ -16,7 +18,7 @@ class LocalGridService:
         district="Unknown"
     ):
 
-        now = datetime.now()
+        now = datetime.now(IST)
 
         hour = now.hour
 

@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+import zoneinfo
 
 from simulation.battery import Battery
 from simulation.virtual_charger import VirtualCharger
@@ -16,7 +17,7 @@ from services.location_service import LocationService
 from services.grid_manager import GridManager
 from services.charging_scheduler import ChargingScheduler
 
-
+IST = zoneinfo.ZoneInfo("Asia/Kolkata")
 class ChargingController:
 
     def __init__(
@@ -80,7 +81,7 @@ class ChargingController:
         # SIMULATION CLOCK
         # --------------------------------------------------
 
-        self.simulation_time = datetime.now()
+        self.simulation_time = datetime.now(IST)
 
         # One controller cycle = one simulated minute
         self.simulation_minutes_per_cycle = 1
@@ -937,7 +938,7 @@ class ChargingController:
             "step": self.step,
 
             "simulation_time":
-                self.simulation_time.isoformat(),
+                self.simulation_time.strftime("%Y-%m-%d %I:%M:%S %p"),
 
             "simulation_minutes":
                 self.total_simulation_minutes,

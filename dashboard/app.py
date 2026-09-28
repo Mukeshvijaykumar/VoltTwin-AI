@@ -7,6 +7,9 @@ from datetime import (
     time as dt_time,
     timedelta
 )
+import zoneinfo
+
+IST = zoneinfo.ZoneInfo("Asia/Kolkata")
 
 import pandas as pd
 import streamlit as st
@@ -348,14 +351,14 @@ with st.sidebar:
     departure_datetime = datetime.combine(
         departure_date,
         departure_time
-    )
+    ).replace(tzinfo=IST)
 
-    # If today's selected time has already passed,
-    # automatically use tomorrow.
+    # Attach IST timezone to current comparison
+    now_ist = datetime.now(IST)
 
     if (
         departure_date == date.today()
-        and departure_datetime <= datetime.now()
+        and departure_datetime <= now_ist
     ):
 
         departure_datetime += timedelta(
@@ -731,7 +734,7 @@ if not st.session_state.charging_started:
 
                 st.session_state.simulation_finished = False
 
-                st.session_state.start_time = datetime.now()
+                st.session_state.start_time = datetime.now(IST)
 
                 st.rerun()
 

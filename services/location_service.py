@@ -107,7 +107,7 @@ class LocationService:
                 "OpenStreetMap Nominatim",
 
             "timestamp":
-                datetime.now().isoformat(),
+                datetime.now().strftime("%Y-%m-%d %I:%M:%S %p"),
 
             "is_live": True
         }
