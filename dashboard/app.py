@@ -553,7 +553,7 @@ st.markdown(
         padding-bottom: 5px;
     ">
         <div style="
-            font-size: 16px;
+            font-size: 35px;
             font-weight: 800;
             letter-spacing: 2.5px;
             color: #00E676 !important;
@@ -563,7 +563,7 @@ st.markdown(
             ⚡ VoltTwin-AI ⚡
         </div>
         <h1 style="
-            font-size: 30px;
+            font-size: 20px;
             font-weight: 700;
             color: #FFFFFF !important;
             margin: 0;
