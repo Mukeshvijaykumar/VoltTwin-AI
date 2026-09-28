@@ -1,24 +1,12 @@
 import os
 import sys
-
-from datetime import (
-    datetime,
-    date,
-    time as dt_time,
-    timedelta
-)
+from datetime import datetime, date, timedelta, time as dt_time
+from zoneinfo import ZoneInfo
 
 import pandas as pd
+import plotly.graph_objects as go
 import streamlit as st
-
-from streamlit_geolocation import (
-    streamlit_geolocation
-)
-
-
-# ============================================================
-# PROJECT ROOT
-# ============================================================
+from streamlit_geolocation import streamlit_geolocation
 
 PROJECT_ROOT = os.path.dirname(
     os.path.dirname(
@@ -27,2130 +15,1270 @@ PROJECT_ROOT = os.path.dirname(
 )
 
 if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
-    sys.path.insert(
-        0,
-        PROJECT_ROOT
-    )
+from services.location_service import LocationService
+from services.charging_scheduler import ChargingScheduler
+from simulation.charging_controller import ChargingController
 
-
-# ============================================================
-# PROJECT IMPORTS
-# ============================================================
-
-from simulation.charging_controller import (
-    ChargingController
-)
-
-from services.location_service import (
-    LocationService
-)
-
-
-# ============================================================
-# PAGE CONFIGURATION
-# ============================================================
+IST = ZoneInfo("Asia/Kolkata")
 
 st.set_page_config(
-
-    page_title=
-        "AI Smart EV Charging",
-
-    page_icon=
-        "🔋",
-
-    layout=
-        "wide",
-
-    initial_sidebar_state=
-        "expanded"
+    page_title="AI Smart EV Charging",
+    page_icon="🔋",
+    layout="wide"
 )
-
-
-# ============================================================
-# CONSTANTS
-# ============================================================
-
-SIMULATION_UPDATE_SECONDS = 0.5
-
-
-# ============================================================
-# CSS
-# ============================================================
 
 st.markdown(
     """
     <style>
-
-    .main-title {
-        font-size: 38px;
-        font-weight: 700;
-        text-align: center;
-        margin-bottom: 5px;
+    .main .block-container {
+        max-width: 1450px;
+        padding-top: 1.2rem;
+        padding-bottom: 2.5rem;
     }
 
-    .subtitle {
-        text-align: center;
-        font-size: 18px;
-        color: #777;
-        margin-bottom: 25px;
+    .hero {
+        padding: 1rem 1.25rem;
+        border: 1px solid #e6e9ef;
+        border-radius: 15px;
+        background: linear-gradient(135deg, #f8fbff, #ffffff);
+        margin-bottom: 1rem;
+    }
+
+    .hero h1 {
+        margin: 0;
+        font-size: 2rem;
+        line-height: 1.2;
+    }
+
+    .hero p {
+        margin: .35rem 0 0;
+        color: #64748b;
+        font-size: .95rem;
     }
 
     .section-title {
-        font-size: 24px;
-        font-weight: 600;
-        margin-top: 20px;
-        margin-bottom: 10px;
+        font-size: 1.15rem;
+        font-weight: 700;
+        margin: 1rem 0 .65rem;
     }
 
+    .card {
+        border: 1px solid #e6e9ef;
+        border-radius: 13px;
+        padding: .9rem 1rem;
+        background: white;
+        min-height: 105px;
+        box-shadow: 0 2px 8px rgba(15, 23, 42, .035);
+    }
+
+    .card-label {
+        font-size: .80rem;
+        color: #64748b;
+        margin-bottom: .30rem;
+    }
+
+    .card-value {
+        font-size: 1.20rem;
+        font-weight: 700;
+        line-height: 1.2;
+        word-break: break-word;
+    }
+
+    .card-sub {
+        font-size: .76rem;
+        color: #64748b;
+        margin-top: .3rem;
+    }
+
+    .small-note {
+        font-size: .8rem;
+        color: #64748b;
+    }
     </style>
     """,
     unsafe_allow_html=True
 )
 
 
-# ============================================================
-# SESSION STATE
-# ============================================================
-
-defaults = {
-
-    "controller":
-        None,
-
-    "records":
-        [],
-
-    "charging_started":
-        False,
-
-    "simulation_finished":
-        False,
-
-    "latitude":
-        None,
-
-    "longitude":
-        None,
-
-    "gps_accuracy":
-        None,
-
-    "location_data":
-        None,
-
-    "gps_error":
-        None,
-
-    "start_time":
-        None
-}
+def value(record, key, default=None):
+    item = record.get(key, default)
+    return default if item is None else item
 
 
-for key, value in defaults.items():
-
-    if key not in st.session_state:
-
-        st.session_state[key] = value
-
-
-# ============================================================
-# HELPER
-# ============================================================
-
-def get_value(
-    record,
-    *keys,
-    default=0
-):
-
-    if not isinstance(
-        record,
-        dict
-    ):
-
-        return default
-
-    for key in keys:
-
-        if key in record:
-
-            value = record[key]
-
-            if value is not None:
-
-                return value
-
-    return default
+def metric_card(label, display_value, sub=""):
+    return f"""
+    <div class="card">
+        <div class="card-label">{label}</div>
+        <div class="card-value">{display_value}</div>
+        <div class="card-sub">{sub}</div>
+    </div>
+    """
 
 
-# ============================================================
-# SAFE FLOAT
-# ============================================================
+def money(amount):
+    try:
+        return f"₹{float(amount):.2f}"
+    except (TypeError, ValueError):
+        return "₹0.00"
 
-def safe_float(
-    value,
-    default=0.0
-):
+
+def hours_text(minutes):
+    if minutes is None:
+        return "N/A"
 
     try:
+        return f"{float(minutes) / 60:.2f} h"
+    except (TypeError, ValueError):
+        return "N/A"
 
-        return float(value)
 
-    except (
-        TypeError,
-        ValueError
-    ):
-
+def safe_float(value_, default=0.0):
+    try:
+        return float(value_)
+    except (TypeError, ValueError):
         return default
 
 
-# ============================================================
-# REVERSE GEOCODING
-# ============================================================
+def make_soc_temperature_chart(df):
+    fig = go.Figure()
 
-@st.cache_data(
-    ttl=300,
-    show_spinner=False
-)
-def reverse_geocode(
-    latitude,
-    longitude
-):
-
-    try:
-
-        service = LocationService()
-
-        return service.reverse_geocode(
-            latitude,
-            longitude
+    if not df.empty:
+        fig.add_trace(
+            go.Scatter(
+                x=df["simulation_hours"],
+                y=df["soc"],
+                mode="lines+markers",
+                name="SOC (%)"
+            )
         )
 
-    except Exception as error:
+        fig.add_trace(
+            go.Scatter(
+                x=df["simulation_hours"],
+                y=df["temperature"],
+                mode="lines+markers",
+                name="Temperature (°C)",
+                yaxis="y2"
+            )
+        )
 
-        return {
+    fig.update_layout(
+        height=330,
+        margin=dict(l=10, r=10, t=30, b=10),
+        xaxis=dict(
+            title="Simulation Time (hours)",
+            rangemode="tozero"
+        ),
+        yaxis=dict(
+            title="SOC (%)",
+            range=[0, 100],
+            fixedrange=True
+        ),
+        yaxis2=dict(
+            title="Temperature (°C)",
+            overlaying="y",
+            side="right",
+            range=[25, 50],
+            fixedrange=True
+        ),
+        legend=dict(
+            orientation="h",
+            y=1.08,
+            x=0
+        ),
+        hovermode="x unified"
+    )
 
-            "latitude":
-                latitude,
-
-            "longitude":
-                longitude,
-
-            "locality":
-                "GPS Location",
-
-            "city":
-                "",
-
-            "district":
-                "",
-
-            "state":
-                "",
-
-            "country":
-                "India",
-
-            "display_name":
-                "GPS Location",
-
-            "error":
-                str(error)
-        }
+    return fig
 
 
-# ============================================================
-# SIDEBAR
-# ============================================================
+def make_current_grid_chart(df):
+    fig = go.Figure()
+
+    if not df.empty:
+        fig.add_trace(
+            go.Scatter(
+                x=df["simulation_hours"],
+                y=df["current"],
+                mode="lines+markers",
+                name="Charging Current (A)"
+            )
+        )
+
+        fig.add_trace(
+            go.Scatter(
+                x=df["simulation_hours"],
+                y=df["grid_load"],
+                mode="lines+markers",
+                name="Grid Load (%)",
+                yaxis="y2"
+            )
+        )
+
+    fig.update_layout(
+        height=330,
+        margin=dict(l=10, r=10, t=30, b=10),
+        xaxis=dict(
+            title="Simulation Time (hours)",
+            rangemode="tozero"
+        ),
+        yaxis=dict(
+            title="Charging Current (A)",
+            range=[0, 34],
+            fixedrange=True
+        ),
+        yaxis2=dict(
+            title="Grid Load (%)",
+            overlaying="y",
+            side="right",
+            range=[0, 100],
+            fixedrange=True
+        ),
+        legend=dict(
+            orientation="h",
+            y=1.08,
+            x=0
+        ),
+        hovermode="x unified"
+    )
+
+    return fig
+
+
+if "running" not in st.session_state:
+    st.session_state.running = False
+
+if "finished" not in st.session_state:
+    st.session_state.finished = False
+
+if "controller" not in st.session_state:
+    st.session_state.controller = None
+
+if "records" not in st.session_state:
+    st.session_state.records = []
+
+if "plug_in_time" not in st.session_state:
+    st.session_state.plug_in_time = None
+
+
+st.markdown(
+    """
+    <div class="hero">
+        <h1>🔋 AI Smart EV Charging Control Center</h1>
+        <p>
+            Multi-Agent AI • Digital Twin • Virtual Smart Charger
+            • Deadline-Aware Charging
+        </p>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+
 
 with st.sidebar:
-
-    st.title(
-        "⚙️ Charging Configuration"
-    )
+    st.header("⚙️ Charging Configuration")
 
     st.caption(
-        "Configure the charging requirement. "
-        "The Digital Twin battery state is "
-        "managed automatically by the controller."
+        "Battery SOC, temperature and health are managed "
+        "automatically by the Digital Twin."
     )
 
-    # ========================================================
-    # TARGET SOC
-    # ========================================================
-
-    st.markdown(
-        "### 🔋 Charging Requirement"
-    )
-
-    required_soc = st.slider(
-
+    target_soc = st.slider(
         "Target SOC (%)",
-
         min_value=50,
-
         max_value=100,
-
-        value=90,
-
-        step=1
+        value=90
     )
 
-    # ========================================================
-    # DEPARTURE
-    # ========================================================
+    st.divider()
 
-    st.markdown(
-        "### 🕐 Departure Requirement"
-    )
+    st.subheader("🕐 Departure Requirement")
+
+    now_ist = datetime.now(IST)
 
     departure_date = st.date_input(
-
         "Departure Date",
-
-        value=date.today()
+        value=now_ist.date() + timedelta(days=1)
     )
 
     departure_time = st.time_input(
-
         "Departure Time",
-
-        value=dt_time(
-            18,
-            0
-        )
+        value=dt_time(18, 0)
     )
 
-    departure_datetime = (
-        datetime.combine(
-            departure_date,
-            departure_time
-        )
-    )
-
-    # If today's selected time has already
-    # passed, automatically use tomorrow.
+    departure_datetime = datetime.combine(
+        departure_date,
+        departure_time
+    ).replace(tzinfo=IST)
 
     if (
-
-        departure_date == date.today()
-
-        and
-
-        departure_datetime
-        <= datetime.now()
-
+        departure_date == now_ist.date()
+        and departure_datetime <= now_ist
     ):
-
-        departure_datetime = (
-            departure_datetime
-            + timedelta(days=1)
-        )
-
-    # ========================================================
-    # LOCATION
-    # ========================================================
-
-    st.markdown("---")
-
-    st.markdown(
-        "### 📍 Vehicle Location"
-    )
+        departure_datetime += timedelta(days=1)
 
     st.caption(
-        "Click the location button and "
-        "allow browser location access."
+        "All scheduling uses Asia/Kolkata (IST)."
     )
 
-    location = (
-        streamlit_geolocation()
-    )
+    st.divider()
 
-    # ========================================================
-    # PROCESS GPS
-    # ========================================================
+    st.subheader("📍 Vehicle Location")
+
+    location_data = streamlit_geolocation()
 
     if (
-
-        isinstance(
-            location,
-            dict
-        )
-
-        and
-
-        location.get(
-            "latitude"
-        ) is not None
-
-        and
-
-        location.get(
-            "longitude"
-        ) is not None
-
+        location_data
+        and location_data.get("latitude") is not None
+        and location_data.get("longitude") is not None
     ):
-
-        latitude = float(
-            location["latitude"]
+        latitude = safe_float(
+            location_data.get("latitude")
+        )
+        longitude = safe_float(
+            location_data.get("longitude")
         )
 
-        longitude = float(
-            location["longitude"]
-        )
-
-        accuracy = location.get(
+        accuracy = location_data.get(
             "accuracy"
         )
 
-        if accuracy is not None:
+        st.success("GPS Location Detected")
 
-            accuracy = float(
-                accuracy
-            )
-
-        st.session_state.latitude = (
-            latitude
+        st.caption(
+            f"Latitude: {latitude:.6f}"
         )
 
-        st.session_state.longitude = (
+        st.caption(
+            f"Longitude: {longitude:.6f}"
+        )
+
+        if accuracy is not None:
+            st.caption(
+                f"Reported GPS accuracy: "
+                f"±{safe_float(accuracy):.0f} m"
+            )
+    else:
+        latitude = None
+        longitude = None
+
+        st.info(
+            "Allow browser location access "
+            "before starting."
+        )
+
+    st.divider()
+
+    st.caption(
+        "Simulation: 1 simulated minute per control cycle"
+    )
+
+    if st.button(
+        "↺ Reset Session",
+        use_container_width=True
+    ):
+        for key in [
+            "running",
+            "finished",
+            "controller",
+            "records",
+            "plug_in_time"
+        ]:
+            st.session_state.pop(
+                key,
+                None
+            )
+
+        st.rerun()
+
+
+location = None
+
+if (
+    latitude is not None
+    and longitude is not None
+):
+    try:
+        location = LocationService().reverse_geocode(
+            latitude,
             longitude
         )
+    except Exception:
+        location = {
+            "locality": "Current Location",
+            "district": "",
+            "state": "",
+            "country": "India",
+            "display_name": "Current Location"
+        }
 
-        st.session_state.gps_accuracy = (
-            accuracy
-        )
 
-        st.session_state.gps_error = None
+st.markdown(
+    '<div class="section-title">🚀 Charging Control</div>',
+    unsafe_allow_html=True
+)
 
-        st.session_state.location_data = (
-            reverse_geocode(
-                latitude,
-                longitude
-            )
-        )
+if latitude is None:
+    st.warning(
+        "Allow browser location access before "
+        "starting the charging simulation."
+    )
 
-    # ========================================================
-    # GPS ERROR
-    # ========================================================
-
-    elif (
-
-        isinstance(
-            location,
-            dict
-        )
-
-        and
-
-        location.get(
-            "error"
-        )
-
-    ):
-
-        error = location.get(
-            "error"
-        )
-
-        if isinstance(
-            error,
-            dict
-        ):
-
-            st.session_state.gps_error = (
-                error.get(
-                    "message",
-                    "Location unavailable"
-                )
-            )
-
-        else:
-
-            st.session_state.gps_error = (
-                str(error)
-            )
-
-    # ========================================================
-    # SHOW LOCATION
-    # ========================================================
-
-    if (
-
-        st.session_state.latitude
-        is not None
-
-        and
-
-        st.session_state.longitude
-        is not None
-
-    ):
-
-        st.success(
-            "📍 GPS Location Detected"
-        )
-
-        st.write(
-            "Latitude: "
-            f"{st.session_state.latitude:.7f}"
-        )
-
-        st.write(
-            "Longitude: "
-            f"{st.session_state.longitude:.7f}"
-        )
-
-        if (
-            st.session_state.gps_accuracy
-            is not None
-        ):
-
-            st.caption(
-                "Reported GPS accuracy: "
-                f"±{st.session_state.gps_accuracy:.1f} m"
-            )
-
-        if (
-            st.session_state.location_data
-        ):
-
-            st.caption(
-                st.session_state
-                .location_data
-                .get(
-                    "display_name",
-                    "GPS Location"
-                )
-            )
-
-    else:
-
-        st.warning(
-            "Waiting for GPS location..."
-        )
-
-        if (
-            st.session_state.gps_error
-        ):
-
-            st.error(
-                st.session_state.gps_error
-            )
-
-    # ========================================================
-    # RESET
-    # ========================================================
-
-    st.markdown("---")
-
-    reset = st.button(
-
-        "🔄 Reset Simulation",
-
-        use_container_width=True
+    start = st.button(
+        "🚀 START INTELLIGENT CHARGING",
+        use_container_width=True,
+        disabled=True
+    )
+else:
+    start = st.button(
+        "🚀 START INTELLIGENT CHARGING",
+        use_container_width=True,
+        type="primary"
     )
 
 
-# ============================================================
-# RESET
-# ============================================================
+if start:
+    controller = ChargingController(
+        target_soc=target_soc,
+        departure_time=departure_datetime
+    )
 
-if reset:
-
-    st.session_state.controller = None
-
+    st.session_state.controller = controller
     st.session_state.records = []
-
-    st.session_state.charging_started = False
-
-    st.session_state.simulation_finished = False
-
-    st.session_state.start_time = None
+    st.session_state.plug_in_time = datetime.now(IST)
+    st.session_state.running = True
+    st.session_state.finished = False
 
     st.rerun()
 
 
-# ============================================================
-# HEADER
-# ============================================================
-
-st.markdown(
-
-    '<div class="main-title">'
-    '🔋 AI Smart EV Charging Control Center'
-    '</div>',
-
-    unsafe_allow_html=True
-)
-
-st.markdown(
-
-    '<div class="subtitle">'
-    'Multi-Agent AI • Digital Twin • '
-    'Virtual Smart Charger • Deadline-Aware Charging'
-    '</div>',
-
-    unsafe_allow_html=True
-)
-
-st.divider()
-
-
-# ============================================================
-# INITIAL DASHBOARD
-# ============================================================
-
-if not st.session_state.charging_started:
-
-    st.markdown(
-
-        '<div class="section-title">'
-        '🔋 Vehicle & Charging Requirement'
-        '</div>',
-
-        unsafe_allow_html=True
+if (
+    not st.session_state.running
+    and not st.session_state.finished
+):
+    scheduler = ChargingScheduler(
+        battery_capacity_kwh=40.0,
+        charger_power_kw=7.36
     )
 
-    # --------------------------------------------------------
-    # DO NOT SHOW INITIAL SOC
-    #
-    # Digital Twin Battery owns its own state.
-    # --------------------------------------------------------
-
-    col1, col2, col3 = st.columns(3)
-
-    with col1:
-
-        st.metric(
-            "Target SOC",
-            f"{required_soc}%"
-        )
-
-    with col2:
-
-        st.metric(
-
-            "Departure",
-
-            departure_datetime.strftime(
-                "%d-%m-%Y %I:%M %p"
-            )
-        )
-
-    with col3:
-
-        if (
-            st.session_state.latitude
-            is not None
-        ):
-
-            gps_status = "READY"
-
-        else:
-
-            gps_status = "WAITING"
-
-        st.metric(
-            "GPS Status",
-            gps_status
-        )
-
-    # ========================================================
-    # LOCATION
-    # ========================================================
+    preview = scheduler.create_schedule(
+        current_soc=42.0,
+        target_soc=target_soc,
+        departure_time=departure_datetime,
+        current_time=datetime.now(IST)
+    )
 
     st.markdown(
         '<div class="section-title">'
-        '📍 Vehicle Location'
+        '🕐 Charging Schedule Preview'
         '</div>',
         unsafe_allow_html=True
     )
 
-    if (
-        st.session_state.location_data
-    ):
+    col1, col2, col3, col4 = st.columns(4)
 
-        location_name = (
-            st.session_state
-            .location_data
-            .get(
-                "display_name",
-                "GPS Location"
-            )
+    col1.metric(
+        "Current SOC",
+        "42.0%"
+    )
+
+    col2.metric(
+        "Required Energy",
+        f'{preview["required_energy_kwh"]:.2f} kWh'
+    )
+
+    col3.metric(
+        "Estimated Charge",
+        hours_text(
+            preview["estimated_charging_minutes"]
         )
+    )
 
-        st.success(
-            location_name
+    col4.metric(
+        "Available Time",
+        hours_text(
+            preview["available_minutes"]
         )
+    )
 
+    if preview["status"] == "INSUFFICIENT_TIME":
+        st.warning(
+            "⚠️ The selected departure time does not "
+            "provide enough estimated time to reach "
+            "the target at the nominal charging rate."
+        )
     else:
-
-        st.info(
-            "Allow GPS location access "
-            "before starting charging."
+        st.success(
+            f'Schedule: {preview["status"]} • '
+            f'Pressure: {preview["deadline_pressure"]}'
         )
 
-    st.markdown("---")
 
-    # ========================================================
-    # START BUTTON
-    # ========================================================
+if st.session_state.controller is not None:
 
-    st.markdown(
-
-        """
-        <div style="
-            text-align:center;
-            font-size:18px;
-            font-weight:600;
-            margin-bottom:10px;
-        ">
-        Ready to start the intelligent charging controller
-        </div>
-        """,
-
-        unsafe_allow_html=True
+    run_every = (
+        0.5
+        if st.session_state.running
+        else None
     )
 
-    start = st.button(
+    @st.fragment(run_every=run_every)
+    def live_dashboard():
 
-        "🚀 START INTELLIGENT CHARGING",
+        controller = st.session_state.controller
+        records = st.session_state.records
 
-        type="primary",
-
-        use_container_width=True
-    )
-
-    # ========================================================
-    # START
-    # ========================================================
-
-    if start:
-
-        if (
-
-            st.session_state.latitude
-            is None
-
-            or
-
-            st.session_state.longitude
-            is None
-
-        ):
-
-            st.error(
-
-                "📍 GPS location is required. "
-                "Click the location button in the sidebar, "
-                "allow location access, and press START."
-            )
-
-        else:
-
-            try:
-
-                controller = (
-                    ChargingController(
-
-                        target_soc=
-                            float(
-                                required_soc
-                            ),
-
-                        departure_time=
-                            departure_datetime
-                    )
-                )
-
-                # IMPORTANT:
-                #
-                # NO:
-                # controller.battery.soc = ...
-                #
-                # NO:
-                # controller.battery.temperature = ...
-                #
-                # NO:
-                # controller.battery.health = ...
-                #
-                # The Battery class is the source
-                # of the Digital Twin initial state.
-
-                st.session_state.controller = (
-                    controller
-                )
-
-                st.session_state.records = []
-
-                st.session_state.charging_started = True
-
-                st.session_state.simulation_finished = False
-
-                st.session_state.start_time = (
-                    datetime.now()
-                )
-
-                st.rerun()
-
-            except Exception as error:
-
-                st.error(
-                    "Unable to start charging controller."
-                )
-
-                st.exception(error)
-
-    st.stop()
-
-
-# ============================================================
-# CONTROLLER
-# ============================================================
-
-controller = (
-    st.session_state.controller
-)
-
-
-if controller is None:
-
-    st.error(
-        "Charging controller is not initialized."
-    )
-
-    st.stop()
-
-
-# ============================================================
-# LIVE SIMULATION FRAGMENT
-# ============================================================
-
-run_every = (
-
-    SIMULATION_UPDATE_SECONDS
-
-    if not st.session_state.simulation_finished
-
-    else None
-)
-
-
-@st.fragment(
-    run_every=run_every,
-    
-)
-def charging_simulation():
-
-    # ========================================================
-    # ONE SIMULATION CYCLE
-    # ========================================================
-
-    if not st.session_state.simulation_finished:
-
-        try:
-
+        if st.session_state.running:
             record = controller.run_cycle(
-
-                st.session_state.latitude,
-
-                st.session_state.longitude
-
+                latitude,
+                longitude
             )
 
-            if record is None:
+            records.append(record)
+            st.session_state.records = records
 
-                record = {}
+            if record.get("state") in [
+                "COMPLETED",
+                "DEADLINE_MISSED"
+            ]:
+                st.session_state.running = False
+                st.session_state.finished = True
 
-            st.session_state.records.append(
-                record
-            )
-
-        except Exception as error:
-
-            st.error(
-                "❌ Charging controller error"
-            )
-
-            st.exception(error)
-
+        if not records:
             return
 
-    # ========================================================
-    # RECORDS
-    # ========================================================
+        record = records[-1]
+        df = pd.DataFrame(records)
 
-    records = (
-        st.session_state.records
-    )
-
-    if not records:
-
-        st.warning(
-            "No telemetry records available."
+        df["simulation_hours"] = (
+            pd.to_numeric(
+                df["simulation_minutes"],
+                errors="coerce"
+            ).fillna(0) / 60.0
         )
 
-        return
-
-    latest = records[-1]
-
-    df = pd.DataFrame(
-        records
-    )
-
-    # ========================================================
-    # STATUS
-    # ========================================================
-
-    status = get_value(
-
-        latest,
-
-        "Status",
-
-        "status",
-
-        default="RUNNING"
-    )
-
-    # ========================================================
-    # TERMINAL STATUS
-    # ========================================================
-
-    if status in [
-
-        "COMPLETED",
-
-        "DEADLINE_MISSED"
-
-    ]:
-
-        st.session_state.simulation_finished = True
-
-    # ========================================================
-    # STATUS MESSAGE
-    # ========================================================
-
-    if status == "COMPLETED":
-
-        st.success(
-            "✅ Charging completed — "
-            "target SOC reached."
+        state = value(
+            record,
+            "state",
+            "RUNNING"
         )
 
-    elif status == "DEADLINE_MISSED":
-
-        st.error(
-            "⚠️ Departure deadline reached "
-            "before target SOC was achieved."
-        )
-
-    elif status == "COOLING":
-
-        st.warning(
-            "🌡️ Battery cooling active — "
-            "automatic charging restart enabled."
-        )
-
-    elif status in [
-
-        "WAITING_GRID",
-
-        "GRID_WAIT"
-
-    ]:
-
-        st.warning(
-            "⚡ Grid demand is high — "
-            "charging is temporarily waiting."
-        )
-
-    elif status in [
-
-        "WAITING",
-
-        "SOLAR_WAIT"
-
-    ]:
-
-        st.info(
-            "⏳ Intelligent controller is waiting "
-            "for better charging conditions."
-        )
-
-    else:
-
-        st.info(
-            "🔄 Intelligent charging controller running..."
-        )
-
-    # ========================================================
-    # VEHICLE / DIGITAL TWIN
-    # ========================================================
-
-    st.markdown(
-
-        '<div class="section-title">'
-        '🔋 Digital Twin Battery'
-        '</div>',
-
-        unsafe_allow_html=True
-    )
-
-    soc = safe_float(
-
-        get_value(
-
-            latest,
-
-            "SOC",
-
-            "soc",
-
-            default=0
-        )
-    )
-
-    temperature = safe_float(
-
-        get_value(
-
-            latest,
-
-            "Temperature",
-
-            "temperature",
-
-            default=0
-        )
-    )
-
-    health = safe_float(
-
-        get_value(
-
-            latest,
-
-            "Health",
-
-            "health",
-
-            default=0
-        )
-    )
-
-    current = safe_float(
-
-        get_value(
-
-            latest,
-
-            "Decision_Current",
-
-            "Current",
-
-            "current",
-
-            default=0
-        )
-    )
-
-    voltage = safe_float(
-
-        get_value(
-
-            latest,
-
-            "Voltage",
-
-            "voltage",
-
-            default=230
-        )
-    )
-
-    power = safe_float(
-
-        get_value(
-
-            latest,
-
-            "Power_kW",
-
-            "power_kw",
-
-            "Charger_Power_kW",
-
-            default=0
-        )
-    )
-
-    col1, col2, col3, col4, col5 = (
-        st.columns(5)
-    )
-
-    with col1:
-
-        st.metric(
-
-            "SOC",
-
-            f"{soc:.1f}%",
-
-            f"Target {required_soc}%"
-        )
-
-    with col2:
-
-        st.metric(
-
-            "Temperature",
-
-            f"{temperature:.1f} °C"
-        )
-
-    with col3:
-
-        st.metric(
-
-            "Health",
-
-            f"{health:.1f}%"
-        )
-
-    with col4:
-
-        st.metric(
-
-            "Current",
-
-            f"{current:.1f} A"
-        )
-
-    with col5:
-
-        st.metric(
-
-            "Power",
-
-            f"{power:.2f} kW"
-        )
-
-    # ========================================================
-    # OPERATING CONDITIONS
-    # ========================================================
-
-    st.markdown(
-
-        '<div class="section-title">'
-        '🌐 Live Operating Conditions'
-        '</div>',
-
-        unsafe_allow_html=True
-    )
-
-    weather_temperature = safe_float(
-
-        get_value(
-
-            latest,
-
-            "Weather_Temperature",
-
-            "weather_temperature",
-
-            "temperature_2m",
-
-            default=0
-        )
-    )
-
-    humidity = safe_float(
-
-        get_value(
-
-            latest,
-
-            "Humidity",
-
-            "humidity",
-
-            default=0
-        )
-    )
-
-    cloud = safe_float(
-
-        get_value(
-
-            latest,
-
-            "Cloud_Cover",
-
-            "cloud_cover",
-
-            default=0
-        )
-    )
-
-    wind = safe_float(
-
-        get_value(
-
-            latest,
-
-            "Wind_Speed",
-
-            "wind_speed",
-
-            default=0
-        )
-    )
-
-    grid_load = safe_float(
-
-        get_value(
-
-            latest,
-
-            "Grid_Load",
-
-            "grid_load",
-
-            default=0
-        )
-    )
-
-    col1, col2, col3, col4 = (
-        st.columns(4)
-    )
-
-    with col1:
-
-        st.metric(
-
-            "🌡️ Weather",
-
-            f"{weather_temperature:.1f} °C"
-        )
-
-    with col2:
-
-        st.metric(
-
-            "💧 Humidity",
-
-            f"{humidity:.1f}%"
-        )
-
-    with col3:
-
-        st.metric(
-
-            "☁️ Cloud Cover",
-
-            f"{cloud:.1f}%"
-        )
-
-    with col4:
-
-        st.metric(
-
-            "💨 Wind",
-
-            f"{wind:.1f} km/h"
-        )
-
-    # ========================================================
-    # GRID / SOLAR
-    # ========================================================
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-
-        st.markdown(
-            "### ⚡ Grid Status"
-        )
-
-        st.metric(
-
-            "Grid Load",
-
-            f"{grid_load:.1f}%"
-        )
-
-        if grid_load >= 90:
-
-            st.error(
-                "🔴 CRITICAL GRID LOAD"
-            )
-
-        elif grid_load >= 75:
-
-            st.warning(
-                "🟠 HIGH GRID DEMAND"
-            )
-
-        else:
-
+        if state == "COMPLETED":
             st.success(
-                "🟢 GRID STABLE"
+                f'✅ Charging completed — target SOC '
+                f'reached at '
+                f'{safe_float(value(record, "soc")):.1f}%.'
+            )
+        elif state == "DEADLINE_MISSED":
+            st.error(
+                "⛔ Departure deadline reached before "
+                "target SOC was achieved."
+            )
+        elif state == "COOLING":
+            st.warning(
+                "❄️ Battery cooling active — charging "
+                "temporarily paused."
+            )
+        elif state == "WAITING_GRID":
+            st.warning(
+                "⚡ Grid constraint — charging is waiting."
+            )
+        else:
+            st.info(
+                "🟢 System active — "
+                + state.replace("_", " ").title()
             )
 
-    with col2:
-
         st.markdown(
-            "### ☀️ Solar Availability"
+            '<div class="section-title">'
+            '🔋 Digital Twin Battery'
+            '</div>',
+            unsafe_allow_html=True
         )
 
-        st.metric(
+        cols = st.columns(5)
 
-            "Cloud Cover",
+        cols[0].markdown(
+            metric_card(
+                "SOC",
+                f'{safe_float(value(record, "soc")):.1f}%',
+                f'Target {target_soc}%'
+            ),
+            unsafe_allow_html=True
+        )
 
-            f"{cloud:.1f}%"
+        cols[1].markdown(
+            metric_card(
+                "Temperature",
+                f'{safe_float(value(record, "temperature")):.1f} °C',
+                "Battery temperature"
+            ),
+            unsafe_allow_html=True
+        )
+
+        cols[2].markdown(
+            metric_card(
+                "Health",
+                f'{safe_float(value(record, "health")):.1f}%',
+                "Battery health"
+            ),
+            unsafe_allow_html=True
+        )
+
+        cols[3].markdown(
+            metric_card(
+                "Current",
+                f'{safe_float(value(record, "current")):.1f} A',
+                "AI charging current"
+            ),
+            unsafe_allow_html=True
+        )
+
+        cols[4].markdown(
+            metric_card(
+                "Power",
+                f'{safe_float(value(record, "power_kw")):.2f} kW',
+                "Virtual charger"
+            ),
+            unsafe_allow_html=True
+        )
+
+        st.markdown(
+            '<div class="section-title">'
+            '🌐 Live Operating Conditions'
+            '</div>',
+            unsafe_allow_html=True
+        )
+
+        cols = st.columns(4)
+
+        cols[0].markdown(
+            metric_card(
+                "Weather",
+                f'{safe_float(value(record, "weather_temperature")):.1f} °C',
+                "Open-Meteo"
+            ),
+            unsafe_allow_html=True
+        )
+
+        cols[1].markdown(
+            metric_card(
+                "Humidity",
+                f'{safe_float(value(record, "humidity")):.0f}%',
+                "Relative humidity"
+            ),
+            unsafe_allow_html=True
+        )
+
+        cols[2].markdown(
+            metric_card(
+                "Cloud Cover",
+                f'{safe_float(value(record, "cloud_cover")):.0f}%',
+                "Solar condition"
+            ),
+            unsafe_allow_html=True
+        )
+
+        cols[3].markdown(
+            metric_card(
+                "Wind",
+                f'{safe_float(value(record, "wind_speed")):.1f} km/h',
+                "Wind speed"
+            ),
+            unsafe_allow_html=True
+        )
+
+        st.markdown(
+            '<div class="section-title">'
+            '⚡ Grid &nbsp;&nbsp; ☀️ Solar'
+            '</div>',
+            unsafe_allow_html=True
+        )
+
+        cols = st.columns(4)
+
+        grid_load = safe_float(
+            value(record, "grid_load")
+        )
+
+        cloud = safe_float(
+            value(record, "cloud_cover"),
+            100
         )
 
         if cloud < 30:
-
-            st.success(
-                "🟢 HIGH SOLAR AVAILABILITY"
-            )
-
+            solar_text = "HIGH"
         elif cloud < 70:
-
-            st.warning(
-                "🟡 MEDIUM SOLAR AVAILABILITY"
-            )
-
+            solar_text = "MEDIUM"
         else:
+            solar_text = "LOW"
 
-            st.info(
-                "🔵 LOW SOLAR AVAILABILITY"
-            )
-
-    # ========================================================
-    # AI COORDINATOR
-    # ========================================================
-
-    st.divider()
-
-    st.markdown(
-
-        '<div class="section-title">'
-        '🧠 AI Coordinator Decision'
-        '</div>',
-
-        unsafe_allow_html=True
-    )
-
-    decision_action = get_value(
-
-        latest,
-
-        "Action",
-
-        "action",
-
-        default="UNKNOWN"
-    )
-
-    decision_current = safe_float(
-
-        get_value(
-
-            latest,
-
-            "Decision_Current",
-
-            "current",
-
-            "Current",
-
-            default=0
-        )
-    )
-
-    decision_mode = get_value(
-
-        latest,
-
-        "Decision_Mode",
-
-        "mode",
-
-        default="IDLE"
-    )
-
-    reason = get_value(
-
-        latest,
-
-        "Decision_Reason",
-
-        "reason",
-
-        default=""
-    )
-
-    col1, col2, col3 = (
-        st.columns(3)
-    )
-
-    with col1:
-
-        st.metric(
-
-            "AI Action",
-
-            str(decision_action)
+        cols[0].markdown(
+            metric_card(
+                "Grid Load",
+                f"{grid_load:.1f}%",
+                value(
+                    record,
+                    "grid_status",
+                    "NORMAL"
+                )
+            ),
+            unsafe_allow_html=True
         )
 
-    with col2:
-
-        st.metric(
-
-            "Recommended Current",
-
-            f"{decision_current:.1f} A"
+        cols[1].markdown(
+            metric_card(
+                "Grid Source",
+                (
+                    "LIVE"
+                    if value(
+                        record,
+                        "grid_is_live",
+                        False
+                    )
+                    else "ESTIMATED"
+                ),
+                value(
+                    record,
+                    "grid_source",
+                    "Simulation"
+                )
+            ),
+            unsafe_allow_html=True
         )
 
-    with col3:
-
-        st.metric(
-
-            "Charging Mode",
-
-            str(decision_mode)
+        cols[2].markdown(
+            metric_card(
+                "Solar Availability",
+                solar_text,
+                f"Cloud cover {cloud:.0f}%"
+            ),
+            unsafe_allow_html=True
         )
 
-    st.info(
-        f"💡 Decision Reason: {reason}"
-    )
-
-    # ========================================================
-    # DEADLINE SCHEDULER
-    # ========================================================
-
-    pressure = get_value(
-
-        latest,
-
-        "Deadline_Pressure",
-
-        "deadline_pressure",
-
-        default="LOW"
-    )
-
-    simulation_minutes = safe_float(
-
-        get_value(
-
-            latest,
-
-            "Simulation_Minutes",
-
-            "simulation_minutes",
-
-            default=0
+        cols[3].markdown(
+            metric_card(
+                "Grid Demand",
+                f'{safe_float(value(record, "grid_demand_mw")):.2f} MW',
+                "Estimated / reported"
+            ),
+            unsafe_allow_html=True
         )
-    )
 
-    required_energy = safe_float(
-
-        get_value(
-
-            latest,
-
-            "Required_Energy_kWh",
-
-            "required_energy_kwh",
-
-            default=0
+        st.markdown(
+            '<div class="section-title">'
+            '🧠 AI Coordinator Decision'
+            '</div>',
+            unsafe_allow_html=True
         )
-    )
 
-    available_minutes = safe_float(
-
-        get_value(
-
-            latest,
-
-            "Available_Minutes",
-
-            "available_minutes",
-
-            default=0
+        decision = value(
+            record,
+            "coordinator",
+            {}
         )
-    )
 
-    estimated_minutes = safe_float(
+        if not isinstance(decision, dict):
+            decision = {}
 
-        get_value(
+        cols = st.columns(4)
 
-            latest,
-
-            "Estimated_Charging_Minutes",
-
-            "estimated_charging_minutes",
-
-            default=0
+        cols[0].markdown(
+            metric_card(
+                "AI Action",
+                decision.get(
+                    "action",
+                    value(record, "action", "WAIT")
+                ),
+                "Coordinator decision"
+            ),
+            unsafe_allow_html=True
         )
-    )
 
-    st.markdown(
-        "### 🕐 Deadline-Aware Scheduler"
-    )
+        cols[1].markdown(
+            metric_card(
+                "Recommended Current",
+                f'{safe_float(decision.get("current", 0)):.1f} A',
+                "Requested current"
+            ),
+            unsafe_allow_html=True
+        )
 
-    col1, col2, col3, col4 = (
-        st.columns(4)
-    )
+        cols[2].markdown(
+            metric_card(
+                "Charging Mode",
+                decision.get(
+                    "mode",
+                    value(record, "mode", "IDLE")
+                ),
+                "Control mode"
+            ),
+            unsafe_allow_html=True
+        )
 
-    with col1:
+        cols[3].markdown(
+            metric_card(
+                "Decision Reason",
+                decision.get(
+                    "reason",
+                    value(record, "reason", "")
+                ),
+                "Why this decision was made"
+            ),
+            unsafe_allow_html=True
+        )
 
-        st.metric(
+        st.markdown(
+            '<div class="section-title">'
+            '🕐 Deadline-Aware Scheduler'
+            '</div>',
+            unsafe_allow_html=True
+        )
 
+        cols = st.columns(5)
+
+        cols[0].metric(
             "Deadline Pressure",
-
-            str(pressure)
+            value(
+                record,
+                "deadline_pressure",
+                "N/A"
+            )
         )
 
-    with col2:
-
-        st.metric(
-
+        cols[1].metric(
             "Required Energy",
-
-            f"{required_energy:.2f} kWh"
+            f'{safe_float(value(record, "required_energy_kwh")):.2f} kWh'
         )
 
-    with col3:
-
-        st.metric(
-
+        cols[2].metric(
             "Available Time",
-
-            f"{available_minutes / 60:.2f} h"
+            hours_text(
+                value(
+                    record,
+                    "available_minutes"
+                )
+            )
         )
 
-    with col4:
-
-        st.metric(
-
+        cols[3].metric(
             "Estimated Charge",
-
-            f"{estimated_minutes / 60:.2f} h"
+            hours_text(
+                value(
+                    record,
+                    "estimated_charging_minutes"
+                )
+            )
         )
 
-    # ========================================================
-    # SIMULATION CLOCK
-    # ========================================================
-
-    simulation_time_text = get_value(
-
-        latest,
-
-        "Simulation_Time",
-
-        "simulation_time",
-
-        default=""
-    )
-
-    st.markdown(
-        "### ⏱️ Automatic Simulation Clock"
-    )
-
-    col1, col2, col3 = (
-        st.columns(3)
-    )
-
-    with col1:
-
-        st.metric(
-
-            "Simulation Elapsed",
-
-            f"{simulation_minutes / 60:.2f} h"
+        controller_departure = getattr(
+            controller,
+            "departure_time",
+            None
         )
 
-    with col2:
-
-        st.metric(
-
-            "Simulation Time",
-
-            str(simulation_time_text)
-        )
-
-    with col3:
-
-        st.metric(
-
+        cols[4].metric(
             "Departure",
-
-            departure_datetime.strftime(
-                "%d-%m-%Y %I:%M %p"
+            (
+                controller_departure.strftime(
+                    "%d-%m-%Y %I:%M %p"
+                )
+                if controller_departure
+                else "N/A"
             )
         )
 
-    # ========================================================
-    # VIRTUAL SMART CHARGER
-    # ========================================================
+        st.markdown(
+            '<div class="section-title">'
+            '⏱️ Automatic Simulation Clock'
+            '</div>',
+            unsafe_allow_html=True
+        )
 
-    st.markdown(
-        "### 🔌 Virtual Smart Charger"
-    )
+        simulation_time = getattr(
+            controller,
+            "simulation_time",
+            None
+        )
 
-    charger_status = get_value(
+        simulation_minutes = getattr(
+            controller,
+            "total_simulation_minutes",
+            0
+        )
 
-        latest,
+        simulation_time_text = (
+            simulation_time.strftime(
+                "%d-%m-%Y %I:%M:%S %p"
+            )
+            if simulation_time
+            else "N/A"
+        )
 
-        "Charger_Status",
+        cols = st.columns(4)
 
-        "charger_status",
+        cols[0].markdown(
+            metric_card(
+                "Simulation Elapsed",
+                f"{safe_float(simulation_minutes) / 60:.2f} h",
+                "Simulated time"
+            ),
+            unsafe_allow_html=True
+        )
 
-        default="IDLE"
-    )
+        cols[1].markdown(
+            metric_card(
+                "Simulation Time",
+                simulation_time_text,
+                "IST Digital Twin clock"
+            ),
+            unsafe_allow_html=True
+        )
 
-    charger_mode = get_value(
+        plug_in_time = st.session_state.plug_in_time
 
-        latest,
+        cols[2].markdown(
+            metric_card(
+                "Plug-in Time",
+                (
+                    plug_in_time.strftime(
+                        "%I:%M:%S %p"
+                    )
+                    if plug_in_time
+                    else "N/A"
+                ),
+                "Real session time"
+            ),
+            unsafe_allow_html=True
+        )
 
-        "Charger_Mode",
+        cols[3].markdown(
+            metric_card(
+                "Departure",
+                (
+                    controller_departure.strftime(
+                        "%I:%M %p"
+                    )
+                    if controller_departure
+                    else "N/A"
+                ),
+                "Deadline"
+            ),
+            unsafe_allow_html=True
+        )
 
-        "charger_mode",
+        st.markdown(
+            '<div class="section-title">'
+            '🔌 Virtual Smart Charger'
+            '</div>',
+            unsafe_allow_html=True
+        )
 
-        default="IDLE"
-    )
+        charger = value(
+            record,
+            "charger_status",
+            {}
+        )
 
-    col1, col2, col3, col4 = (
-        st.columns(4)
-    )
+        if not isinstance(charger, dict):
+            charger = {}
 
-    with col1:
+        cols = st.columns(4)
 
-        st.metric(
-
+        cols[0].metric(
             "Status",
-
-            str(charger_status)
+            charger.get(
+                "status",
+                "UNKNOWN"
+            )
         )
 
-    with col2:
-
-        st.metric(
-
+        cols[1].metric(
             "Current",
-
-            f"{current:.1f} A"
+            f'{safe_float(charger.get("current")):.1f} A'
         )
 
-    with col3:
-
-        st.metric(
-
+        cols[2].metric(
             "Voltage",
-
-            f"{voltage:.1f} V"
+            f'{safe_float(charger.get("voltage"), 230):.0f} V'
         )
 
-    with col4:
-
-        st.metric(
-
-            "Mode",
-
-            str(charger_mode)
+        cols[3].metric(
+            "Power",
+            f'{safe_float(charger.get("power_kw")):.2f} kW'
         )
 
-    # ========================================================
-    # MULTI AGENT LAYER
-    # ========================================================
-
-    with st.expander(
-        "🤖 Multi-Agent Decision Layer"
-    ):
-
-        col1, col2, col3, col4, col5 = (
-            st.columns(5)
+        st.markdown(
+            '<div class="section-title">'
+            '🌡️ Thermal Protection &nbsp;&nbsp; 💰 Charging Cost'
+            '</div>',
+            unsafe_allow_html=True
         )
 
-        with col1:
+        cols = st.columns(6)
 
-            st.markdown(
-                "### 🔋 Battery Agent"
-            )
-
-            st.write(
-
-                get_value(
-
-                    latest,
-
-                    "Battery_Action",
-
-                    "battery_action",
-
-                    default="N/A"
-                )
-            )
-
-        with col2:
-
-            st.markdown(
-                "### ⚡ Grid Agent"
-            )
-
-            st.write(
-
-                get_value(
-
-                    latest,
-
-                    "Grid_Action",
-
-                    "grid_action",
-
-                    default="N/A"
-                )
-            )
-
-        with col3:
-
-            st.markdown(
-                "### ☀️ Solar Agent"
-            )
-
-            st.write(
-
-                get_value(
-
-                    latest,
-
-                    "Solar_Action",
-
-                    "solar_action",
-
-                    default="N/A"
-                )
-            )
-
-        with col4:
-
-            st.markdown(
-                "### 💰 Tariff Agent"
-            )
-
-            st.write(
-
-                get_value(
-
-                    latest,
-
-                    "Tariff_Action",
-
-                    "tariff_action",
-
-                    default="N/A"
-                )
-            )
-
-        with col5:
-
-            st.markdown(
-                "### 👤 User Agent"
-            )
-
-            st.write(
-
-                get_value(
-
-                    latest,
-
-                    "User_Action",
-
-                    "user_action",
-
-                    default="N/A"
-                )
-            )
-
-    # ========================================================
-    # COOLING / RESTART
-    # ========================================================
-
-    cooling_active = get_value(
-
-        latest,
-
-        "Cooling_Active",
-
-        "cooling_active",
-
-        default=False
-    )
-
-    cooling_cycles = safe_float(
-
-        get_value(
-
-            latest,
-
-            "Cooling_Cycles",
-
-            "cooling_cycles",
-
-            default=0
-        )
-    )
-
-    restart_count = safe_float(
-
-        get_value(
-
-            latest,
-
-            "Restart_Count",
-
-            "restart_count",
-
-            default=0
-        )
-    )
-
-    st.markdown(
-        "### 🌡️ Thermal Protection"
-    )
-
-    col1, col2, col3 = (
-        st.columns(3)
-    )
-
-    with col1:
-
-        st.metric(
-
+        cols[0].metric(
             "Cooling",
-
             "ACTIVE"
-            if cooling_active
+            if value(record, "cooling", False)
             else "NORMAL"
         )
 
-    with col2:
-
-        st.metric(
-
+        cols[1].metric(
             "Cooling Cycles",
-
-            int(cooling_cycles)
-        )
-
-    with col3:
-
-        st.metric(
-
-            "Automatic Restarts",
-
-            int(restart_count)
-        )
-
-    # ========================================================
-    # GRAPHS
-    # ========================================================
-
-    st.divider()
-
-    st.markdown(
-        "### 📈 SOC & Battery Temperature"
-    )
-
-    graph_rows = []
-
-    for item in records:
-
-        graph_rows.append({
-
-            "Simulation Hours":
-
+            int(
                 safe_float(
-
-                    get_value(
-
-                        item,
-
-                        "Simulation_Minutes",
-
-                        "simulation_minutes",
-
-                        default=0
-                    )
-
-                ) / 60.0,
-
-            "SOC (%)":
-
-                safe_float(
-
-                    get_value(
-
-                        item,
-
-                        "SOC",
-
-                        "soc",
-
-                        default=0
-                    )
-                ),
-
-            "Temperature (°C)":
-
-                safe_float(
-
-                    get_value(
-
-                        item,
-
-                        "Temperature",
-
-                        "temperature",
-
-                        default=0
-                    )
+                    value(record, "cooling_cycles")
                 )
-        })
-
-    graph_df = pd.DataFrame(
-        graph_rows
-    )
-
-    if not graph_df.empty:
-
-        graph_df = (
-            graph_df
-            .set_index(
-                "Simulation Hours"
             )
         )
 
-        st.line_chart(
-
-            graph_df[
-                [
-                    "SOC (%)",
-                    "Temperature (°C)"
-                ]
-            ],
-
-            height=300
-        )
-
-    # ========================================================
-    # GRAPH 2
-    # ========================================================
-
-    st.markdown(
-        "### ⚡ Charging Current & Grid Load"
-    )
-
-    graph_rows = []
-
-    for item in records:
-
-        graph_rows.append({
-
-            "Simulation Hours":
-
+        cols[2].metric(
+            "Auto Restarts",
+            int(
                 safe_float(
-
-                    get_value(
-
-                        item,
-
-                        "Simulation_Minutes",
-
-                        "simulation_minutes",
-
-                        default=0
-                    )
-
-                ) / 60.0,
-
-            "Charging Current (A)":
-
-                safe_float(
-
-                    get_value(
-
-                        item,
-
-                        "Decision_Current",
-
-                        "Current",
-
-                        "current",
-
-                        default=0
-                    )
-                ),
-
-            "Grid Load (%)":
-
-                safe_float(
-
-                    get_value(
-
-                        item,
-
-                        "Grid_Load",
-
-                        "grid_load",
-
-                        default=0
-                    )
+                    value(record, "restart_count")
                 )
-        })
-
-    graph_df = pd.DataFrame(
-        graph_rows
-    )
-
-    if not graph_df.empty:
-
-        graph_df = (
-            graph_df
-            .set_index(
-                "Simulation Hours"
             )
         )
 
-        st.line_chart(
-
-            graph_df[
-                [
-                    "Charging Current (A)",
-                    "Grid Load (%)"
-                ]
-            ],
-
-            height=300
+        cols[3].metric(
+            "Energy This Cycle",
+            f'{safe_float(value(record, "energy_kwh")):.3f} kWh'
         )
 
-    # ========================================================
-    # TELEMETRY
-    # ========================================================
-
-    with st.expander(
-        "📊 Telemetry Records"
-    ):
-
-        st.dataframe(
-
-            df,
-
-            use_container_width=True,
-
-            height=300
-        )
-
-    # ========================================================
-    # DOWNLOAD
-    # ========================================================
-
-    with st.expander(
-        "📥 Export Telemetry"
-    ):
-
-        csv_data = (
-
-            df
-            .to_csv(
-                index=False
-            )
-            .encode(
-                "utf-8"
+        cols[4].metric(
+            "Cycle Cost",
+            money(
+                value(
+                    record,
+                    "step_cost",
+                    0
+                )
             )
         )
 
-        st.download_button(
-
-            "Download Charging Telemetry",
-
-            data=csv_data,
-
-            file_name=
-                "ev_charging_telemetry.csv",
-
-            mime=
-                "text/csv",
-
-            use_container_width=True
+        cols[5].metric(
+            "Total Cost",
+            money(
+                value(
+                    record,
+                    "total_cost",
+                    0
+                )
+            )
         )
-
-    # ========================================================
-    # LOCATION
-    # ========================================================
-
-    if (
-        st.session_state.location_data
-    ):
 
         st.caption(
+            f'Tariff: ₹{safe_float(value(record, "tariff_rate")):.2f}/kWh • '
+            f'Period: {value(record, "tariff_period", "N/A")} • '
+            f'Slab rate: ₹{safe_float(value(record, "tariff_slab_rate")):.2f}'
+        )
 
-            "📍 "
-            +
-            st.session_state
-            .location_data
-            .get(
-                "display_name",
-                "GPS Location"
+        st.markdown(
+            '<div class="section-title">'
+            '🤖 Multi-Agent Decision Layer'
+            '</div>',
+            unsafe_allow_html=True
+        )
+
+        agent_columns = st.columns(5)
+
+        agents = [
+            (
+                "Battery",
+                value(record, "battery_agent", {})
+            ),
+            (
+                "Grid",
+                value(record, "grid_agent", {})
+            ),
+            (
+                "Solar",
+                value(record, "solar_agent", {})
+            ),
+            (
+                "Tariff",
+                value(record, "tariff_agent", {})
+            ),
+            (
+                "User",
+                value(record, "user_agent", {})
             )
-            +
-            " | Latitude: "
-            +
-            f"{st.session_state.latitude:.7f}"
-            +
-            " | Longitude: "
-            +
-            f"{st.session_state.longitude:.7f}"
+        ]
+
+        for column, (name, data) in zip(
+            agent_columns,
+            agents
+        ):
+            if not isinstance(data, dict):
+                data = {}
+
+            agent_status = (
+                data.get("action")
+                or data.get("status")
+                or data.get("reason")
+                or str(data)
+                or "ACTIVE"
+            )
+
+            column.markdown(
+                metric_card(
+                    name,
+                    str(agent_status)[:28],
+                    "Agent output"
+                ),
+                unsafe_allow_html=True
+            )
+
+        st.markdown(
+            '<div class="section-title">'
+            '📈 Live Charging Behaviour'
+            '</div>',
+            unsafe_allow_html=True
         )
 
-    # ========================================================
-    # RESEARCH NOTE
-    # ========================================================
+        chart_col1, chart_col2 = st.columns(2)
 
-    st.caption(
+        with chart_col1:
+            st.markdown(
+                "**🔋 SOC & Battery Temperature**"
+            )
 
-        "Research prototype: battery, thermal, "
-        "grid and tariff thresholds are simulation "
-        "parameters and are not universal real-world "
-        "EV safety limits or official electricity tariffs."
-    )
+            st.plotly_chart(
+                make_soc_temperature_chart(df),
+                use_container_width=True,
+                config={
+                    "displayModeBar": False
+                }
+            )
 
-    # ========================================================
-    # STOP STREAMING
-    # ========================================================
+        with chart_col2:
+            st.markdown(
+                "**⚡ Charging Current & Grid Load**"
+            )
 
-    if status in [
+            st.plotly_chart(
+                make_current_grid_chart(df),
+                use_container_width=True,
+                config={
+                    "displayModeBar": False
+                }
+            )
 
-        "COMPLETED",
-
-        "DEADLINE_MISSED"
-
-    ]:
-
-        st.success(
-            "Simulation stopped."
+        st.markdown(
+            '<div class="section-title">'
+            '📡 Telemetry Records'
+            '</div>',
+            unsafe_allow_html=True
         )
 
+        preferred_columns = [
+            "step",
+            "simulation_time",
+            "soc",
+            "target_soc",
+            "temperature",
+            "current",
+            "grid_load",
+            "state",
+            "reason",
+            "deadline_pressure",
+            "available_minutes",
+            "required_energy_kwh",
+            "estimated_charging_minutes",
+            "energy_kwh",
+            "step_cost",
+            "total_cost",
+            "tariff_period",
+            "tariff_rate"
+        ]
 
-# ============================================================
-# RUN
-# ============================================================
+        available_columns = [
+            column
+            for column in preferred_columns
+            if column in df.columns
+        ]
 
-charging_simulation()
+        st.dataframe(
+            df[available_columns].tail(10),
+            use_container_width=True,
+            hide_index=True
+        )
+
+        csv_data = df.to_csv(
+            index=False
+        ).encode("utf-8")
+
+        st.download_button(
+            "📥 Export Telemetry CSV",
+            csv_data,
+            "ev_charging_telemetry.csv",
+            "text/csv"
+        )
+
+        if location:
+            st.caption(
+                f'📍 {location.get("display_name", "Current Location")}'
+                f' | Latitude: {latitude:.6f}'
+                f' | Longitude: {longitude:.6f}'
+            )
+
+        st.caption(
+            "Research prototype: battery, thermal, grid and tariff "
+            "thresholds are simulation parameters. Grid values may be "
+            "estimated/simulated when live telemetry is unavailable, "
+            "and tariff values are project simulation parameters."
+        )
+
+        if not st.session_state.running:
+            st.markdown(
+                '<div class="section-title">'
+                '🏁 Charging Session Summary'
+                '</div>',
+                unsafe_allow_html=True
+            )
+
+            final = records[-1]
+
+            final_soc = safe_float(
+                value(final, "soc")
+            )
+
+            total_energy = safe_float(
+                value(final, "total_energy_kwh")
+            )
+
+            final_cost = safe_float(
+                value(final, "total_cost")
+            )
+
+            cols = st.columns(4)
+
+            cols[0].metric(
+                "Final SOC",
+                f"{final_soc:.1f}%"
+            )
+
+            cols[1].metric(
+                "Energy Consumed",
+                f"{total_energy:.2f} kWh"
+            )
+
+            cols[2].metric(
+                "Total Cost",
+                money(final_cost)
+            )
+
+            cols[3].metric(
+                "Departure Status",
+                (
+                    "READY"
+                    if final_soc >= target_soc
+                    else "TARGET NOT REACHED"
+                )
+            )
+
+    live_dashboard()

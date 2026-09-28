@@ -9,13 +9,12 @@ from datetime import (
 )
 import zoneinfo
 
-IST = zoneinfo.ZoneInfo("Asia/Kolkata")
-
 import pandas as pd
 import streamlit as st
 
 from streamlit_geolocation import streamlit_geolocation
 
+IST = zoneinfo.ZoneInfo("Asia/Kolkata")
 
 # ============================================================
 # PROJECT ROOT
@@ -133,6 +132,7 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
+
 # ============================================================
 # SESSION STATE
 # ============================================================
@@ -353,7 +353,6 @@ with st.sidebar:
         departure_time
     ).replace(tzinfo=IST)
 
-    # Attach IST timezone to current comparison
     now_ist = datetime.now(IST)
 
     if (
@@ -550,7 +549,7 @@ st.markdown(
         padding-bottom: 5px;
     ">
         <div style="
-            font-size: 35px;
+            font-size: 16px;
             font-weight: 800;
             letter-spacing: 2.5px;
             color: #00E676 !important;
@@ -560,7 +559,7 @@ st.markdown(
             ⚡ VoltTwin-AI ⚡
         </div>
         <h1 style="
-            font-size: 20px;
+            font-size: 30px;
             font-weight: 700;
             color: #FFFFFF !important;
             margin: 0;
@@ -784,13 +783,6 @@ run_every = (
 )
 def charging_simulation():
 
-    # ========================================================
-    # PLACEHOLDER CONTAINER
-    #
-    # This keeps the live dashboard area stable while the
-    # fragment updates instead of rebuilding the whole page.
-    # ========================================================
-
     dashboard_area = st.empty()
 
     with dashboard_area.container():
@@ -860,20 +852,12 @@ def charging_simulation():
             default="RUNNING"
         )
 
-        # ====================================================
-        # TERMINAL STATUS
-        # ====================================================
-
         if status in [
             "COMPLETED",
             "DEADLINE_MISSED"
         ]:
 
             st.session_state.simulation_finished = True
-
-        # ====================================================
-        # STATUS MESSAGE
-        # ====================================================
 
         if status == "COMPLETED":
 
@@ -921,6 +905,12 @@ def charging_simulation():
             st.info(
                 "🔄 Intelligent charging controller running..."
             )
+
+        # ====================================================
+        # LIVE TELEMETRY CONTAINER (DIMS ON RERUN)
+        # ====================================================
+
+        st.markdown('<div class="live-telemetry-container">', unsafe_allow_html=True)
 
         # ====================================================
         # DIGITAL TWIN
@@ -1450,8 +1440,6 @@ def charging_simulation():
             unsafe_allow_html=True
         )
 
-        # Current-cycle energy
-
         cycle_energy = safe_float(
 
             get_value(
@@ -1467,8 +1455,6 @@ def charging_simulation():
                 default=0
             )
         )
-
-        # Current cycle cost
 
         cycle_cost = safe_float(
 
@@ -1487,8 +1473,6 @@ def charging_simulation():
                 default=0
             )
         )
-
-        # Total cost from controller/telemetry
 
         total_cost = safe_float(
 
@@ -1511,8 +1495,6 @@ def charging_simulation():
                 )
             )
         )
-
-        # Total energy from controller/telemetry
 
         total_energy = safe_float(
 
@@ -1837,6 +1819,11 @@ def charging_simulation():
                 int(restart_count)
             )
 
+        st.markdown('</div>', unsafe_allow_html=True)
+        # ====================================================
+        # END OF LIVE TELEMETRY CONTAINER
+        # ====================================================
+
         # ====================================================
         # GRAPH 1: SOC & BATTERY TEMPERATURE
         # ====================================================
@@ -1846,7 +1833,6 @@ def charging_simulation():
 
         graph_rows = []
         for item in records:
-            # Convert elapsed simulation time into integer minutes for a clean X-axis
             sim_mins = round(safe_float(get_value(item, "Simulation_Minutes", "simulation_minutes", default=0)))
 
             graph_rows.append({
@@ -1858,7 +1844,6 @@ def charging_simulation():
         graph_df = pd.DataFrame(graph_rows)
 
         if not graph_df.empty:
-            # Clean duplicate time ticks
             graph_df = graph_df.drop_duplicates(subset=["Time (min)"], keep="last")
 
             chart_col1, chart_col2 = st.columns(2)
@@ -1879,6 +1864,7 @@ def charging_simulation():
                     y="Temperature (°C)",
                     height=280
                 )
+
         # ====================================================
         # GRAPH 2: CHARGING CURRENT & GRID LOAD
         # ====================================================
@@ -2000,13 +1986,7 @@ def charging_simulation():
         # RESEARCH NOTE
         # ====================================================
 
-        st.caption(
-
-            "Research prototype: battery, thermal, "
-            "grid and tariff thresholds are simulation "
-            "parameters and are not universal real-world "
-            "EV safety limits or official electricity tariffs."
-        )
+        
 
         # ====================================================
         # STOP STREAMING

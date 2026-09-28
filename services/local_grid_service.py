@@ -4,6 +4,7 @@ import math
 
 IST = zoneinfo.ZoneInfo("Asia/Kolkata")
 
+
 class LocalGridService:
 
     def __init__(self):
@@ -160,7 +161,7 @@ class LocalGridService:
                 True,
 
             "timestamp":
-                now.isoformat()
+                now.strftime("%Y-%m-%d %I:%M:%S %p")
         }
 
     def get_location_factor(

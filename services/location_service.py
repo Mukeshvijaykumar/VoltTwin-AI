@@ -1,5 +1,8 @@
 import requests
 from datetime import datetime
+import zoneinfo
+
+IST = zoneinfo.ZoneInfo("Asia/Kolkata")
 
 
 class LocationService:
@@ -79,6 +82,8 @@ class LocationService:
             or ""
         )
 
+        now = datetime.now(IST)
+
         result = {
 
             "latitude": float(latitude),
@@ -107,13 +112,13 @@ class LocationService:
                 "OpenStreetMap Nominatim",
 
             "timestamp":
-                datetime.now().strftime("%Y-%m-%d %I:%M:%S %p"),
+                now.strftime("%Y-%m-%d %I:%M:%S %p"),
 
             "is_live": True
         }
 
         self.last_location = result
 
-        self.last_update = datetime.now()
+        self.last_update = now
 
         return result

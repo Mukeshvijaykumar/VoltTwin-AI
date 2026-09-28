@@ -17,7 +17,10 @@ from services.location_service import LocationService
 from services.grid_manager import GridManager
 from services.charging_scheduler import ChargingScheduler
 
+# Define local Indian Standard Time
 IST = zoneinfo.ZoneInfo("Asia/Kolkata")
+
+
 class ChargingController:
 
     def __init__(
@@ -31,6 +34,11 @@ class ChargingController:
         # --------------------------------------------------
 
         self.target_soc = float(target_soc)
+        
+        # Ensure departure_time is IST timezone-aware if passed
+        if departure_time is not None:
+            if departure_time.tzinfo is None:
+                departure_time = departure_time.replace(tzinfo=IST)
         self.departure_time = departure_time
 
         # --------------------------------------------------
@@ -78,7 +86,7 @@ class ChargingController:
         self.coordinator = CoordinatorAgent()
 
         # --------------------------------------------------
-        # SIMULATION CLOCK
+        # SIMULATION CLOCK (Local IST Time)
         # --------------------------------------------------
 
         self.simulation_time = datetime.now(IST)
@@ -182,7 +190,7 @@ class ChargingController:
                 "cloud_cover": 50.0,
                 "wind_speed": 10.0,
                 "wind_direction": 0.0,
-                "timestamp": self.simulation_time.isoformat(),
+                "timestamp": self.simulation_time.strftime("%Y-%m-%d %I:%M:%S %p"),
                 "latitude": latitude,
                 "longitude": longitude,
                 "location": location_name,
@@ -227,10 +235,14 @@ class ChargingController:
         if self.departure_time is None:
             return None
 
+        departure = self.departure_time
+        if departure.tzinfo is None and self.simulation_time.tzinfo is not None:
+            departure = departure.replace(tzinfo=self.simulation_time.tzinfo)
+
         schedule = self.scheduler.create_schedule(
             current_soc=self.battery.soc,
             target_soc=self.target_soc,
-            departure_time=self.departure_time,
+            departure_time=departure,
             current_time=self.simulation_time
         )
 
@@ -323,7 +335,7 @@ class ChargingController:
                 "source": "Grid Fallback",
                 "is_live": False,
                 "is_estimated": True,
-                "timestamp": self.simulation_time.isoformat()
+                "timestamp": self.simulation_time.strftime("%Y-%m-%d %I:%M:%S %p")
             }
 
         self.last_grid = grid
@@ -387,14 +399,14 @@ class ChargingController:
 
         if self.departure_time is not None:
 
-            if (
-                self.simulation_time
-                >= self.departure_time
-                and
-                self.battery.soc
-                < self.target_soc
-            ):
+            departure = self.departure_time
+            if departure.tzinfo is None and self.simulation_time.tzinfo is not None:
+                departure = departure.replace(tzinfo=self.simulation_time.tzinfo)
 
+            if (
+                self.simulation_time >= departure
+                and self.battery.soc < self.target_soc
+            ):
                 deadline_missed = True
 
         if deadline_missed:
@@ -710,9 +722,6 @@ class ChargingController:
                 "deadline_pressure",
                 "LOW"
             )
-
-        # Deadline can increase current,
-        # but NEVER override safety limits.
 
         if (
             pressure in ["HIGH", "CRITICAL"]
@@ -1107,7 +1116,7 @@ class ChargingController:
 
             "Departure_Time":
                 (
-                    self.departure_time.isoformat()
+                    self.departure_time.strftime("%Y-%m-%d %I:%M:%S %p")
                     if self.departure_time
                     else None
                 ),
@@ -1210,7 +1219,7 @@ class ChargingController:
                 self.step,
 
             "simulation_time":
-                self.simulation_time,
+                self.simulation_time.strftime("%Y-%m-%d %I:%M:%S %p"),
 
             "total_simulation_minutes":
                 self.total_simulation_minutes,

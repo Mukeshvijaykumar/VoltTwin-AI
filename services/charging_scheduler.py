@@ -1,4 +1,8 @@
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+
+
+IST = ZoneInfo("Asia/Kolkata")
 
 
 class ChargingScheduler:
@@ -8,6 +12,7 @@ class ChargingScheduler:
         battery_capacity_kwh=40.0,
         charger_power_kw=7.36
     ):
+
         self.battery_capacity_kwh = float(
             battery_capacity_kwh
         )
@@ -16,16 +21,37 @@ class ChargingScheduler:
             charger_power_kw
         )
 
-    # ========================================================
-    # CURRENT TIME
-    # ========================================================
+    # ==========================================================
+    # TIME NORMALIZATION
+    # ==========================================================
+
+    def normalize_time(self, value):
+
+        if value is None:
+            return datetime.now(IST)
+
+        # Naive datetime:
+        # assume it represents India Standard Time
+        if value.tzinfo is None:
+            return value.replace(
+                tzinfo=IST
+            )
+
+        # Already timezone-aware:
+        # convert it to IST
+        return value.astimezone(IST)
+
+    # ==========================================================
+    # CURRENT IST TIME
+    # ==========================================================
 
     def get_current_time(self):
-        return datetime.now()
 
-    # ========================================================
+        return datetime.now(IST)
+
+    # ==========================================================
     # REQUIRED ENERGY
-    # ========================================================
+    # ==========================================================
 
     def calculate_required_energy(
         self,
@@ -33,9 +59,17 @@ class ChargingScheduler:
         target_soc
     ):
 
+        current_soc = float(
+            current_soc
+        )
+
+        target_soc = float(
+            target_soc
+        )
+
         difference = max(
             0.0,
-            float(target_soc) - float(current_soc)
+            target_soc - current_soc
         )
 
         energy = (
@@ -49,9 +83,9 @@ class ChargingScheduler:
             3
         )
 
-    # ========================================================
+    # ==========================================================
     # ESTIMATED CHARGING TIME
-    # ========================================================
+    # ==========================================================
 
     def calculate_charging_time(
         self,
@@ -61,6 +95,7 @@ class ChargingScheduler:
         if self.charger_power_kw <= 0:
             return 0.0
 
+        # 90% charging efficiency
         effective_power = (
             self.charger_power_kw
             * 0.90
@@ -76,9 +111,9 @@ class ChargingScheduler:
             1
         )
 
-    # ========================================================
+    # ==========================================================
     # DEADLINE PRESSURE
-    # ========================================================
+    # ==========================================================
 
     def calculate_deadline_pressure(
         self,
@@ -87,6 +122,7 @@ class ChargingScheduler:
     ):
 
         if available_minutes <= 0:
+
             return "CRITICAL"
 
         ratio = (
@@ -95,19 +131,24 @@ class ChargingScheduler:
         )
 
         if ratio >= 1.0:
+
             return "CRITICAL"
 
         elif ratio >= 0.75:
+
             return "HIGH"
 
         elif ratio >= 0.45:
+
             return "MEDIUM"
 
-        return "LOW"
+        else:
 
-    # ========================================================
+            return "LOW"
+
+    # ==========================================================
     # CREATE SCHEDULE
-    # ========================================================
+    # ==========================================================
 
     def create_schedule(
         self,
@@ -117,8 +158,21 @@ class ChargingScheduler:
         current_time=None
     ):
 
-        if current_time is None:
-            current_time = self.get_current_time()
+        # ------------------------------------------------------
+        # NORMALIZE BOTH DATETIMES
+        # ------------------------------------------------------
+
+        current_time = self.normalize_time(
+            current_time
+        )
+
+        departure_time = self.normalize_time(
+            departure_time
+        )
+
+        # ------------------------------------------------------
+        # REQUIRED ENERGY
+        # ------------------------------------------------------
 
         required_energy = (
             self.calculate_required_energy(
@@ -127,11 +181,19 @@ class ChargingScheduler:
             )
         )
 
+        # ------------------------------------------------------
+        # ESTIMATED CHARGING TIME
+        # ------------------------------------------------------
+
         charging_minutes = (
             self.calculate_charging_time(
                 required_energy
             )
         )
+
+        # ------------------------------------------------------
+        # AVAILABLE TIME
+        # ------------------------------------------------------
 
         available_minutes = (
             departure_time
@@ -142,6 +204,10 @@ class ChargingScheduler:
             0.0,
             available_minutes
         )
+
+        # ------------------------------------------------------
+        # SCHEDULE STATUS
+        # ------------------------------------------------------
 
         if charging_minutes <= available_minutes:
 
@@ -162,12 +228,20 @@ class ChargingScheduler:
 
             latest_start = current_time
 
+        # ------------------------------------------------------
+        # DEADLINE PRESSURE
+        # ------------------------------------------------------
+
         deadline_pressure = (
             self.calculate_deadline_pressure(
                 charging_minutes,
                 available_minutes
             )
         )
+
+        # ------------------------------------------------------
+        # RESULT
+        # ------------------------------------------------------
 
         return {
 
