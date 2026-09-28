@@ -36,11 +36,21 @@ class ChargingController:
         self.target_soc = float(target_soc)
         
         # Ensure departure_time is IST timezone-aware if passed
-        if departure_time is not None:
-            if departure_time.tzinfo is None:
-                departure_time = departure_time.replace(tzinfo=IST)
-        self.departure_time = departure_time
+        if departure_time is None:
 
+            self.departure_time = None
+
+        elif departure_time.tzinfo is None:
+
+            self.departure_time = departure_time.replace(
+                tzinfo=IST
+            )
+
+        else:
+
+            self.departure_time = departure_time.astimezone(
+                IST
+            )
         # --------------------------------------------------
         # DIGITAL TWIN BATTERY
         # --------------------------------------------------

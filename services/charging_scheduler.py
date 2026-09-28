@@ -30,15 +30,13 @@ class ChargingScheduler:
         if value is None:
             return datetime.now(IST)
 
-        # Naive datetime:
-        # assume it represents India Standard Time
+        # Convert naive datetime to IST
         if value.tzinfo is None:
             return value.replace(
                 tzinfo=IST
             )
 
-        # Already timezone-aware:
-        # convert it to IST
+        # Convert any timezone-aware datetime to IST
         return value.astimezone(IST)
 
     # ==========================================================
@@ -59,13 +57,8 @@ class ChargingScheduler:
         target_soc
     ):
 
-        current_soc = float(
-            current_soc
-        )
-
-        target_soc = float(
-            target_soc
-        )
+        current_soc = float(current_soc)
+        target_soc = float(target_soc)
 
         difference = max(
             0.0,
@@ -95,7 +88,6 @@ class ChargingScheduler:
         if self.charger_power_kw <= 0:
             return 0.0
 
-        # 90% charging efficiency
         effective_power = (
             self.charger_power_kw
             * 0.90
@@ -122,7 +114,6 @@ class ChargingScheduler:
     ):
 
         if available_minutes <= 0:
-
             return "CRITICAL"
 
         ratio = (
@@ -131,19 +122,15 @@ class ChargingScheduler:
         )
 
         if ratio >= 1.0:
-
             return "CRITICAL"
 
         elif ratio >= 0.75:
-
             return "HIGH"
 
         elif ratio >= 0.45:
-
             return "MEDIUM"
 
         else:
-
             return "LOW"
 
     # ==========================================================
@@ -158,9 +145,9 @@ class ChargingScheduler:
         current_time=None
     ):
 
-        # ------------------------------------------------------
-        # NORMALIZE BOTH DATETIMES
-        # ------------------------------------------------------
+        # ======================================================
+        # FORCE BOTH TIMES TO IST
+        # ======================================================
 
         current_time = self.normalize_time(
             current_time
@@ -170,9 +157,9 @@ class ChargingScheduler:
             departure_time
         )
 
-        # ------------------------------------------------------
+        # ======================================================
         # REQUIRED ENERGY
-        # ------------------------------------------------------
+        # ======================================================
 
         required_energy = (
             self.calculate_required_energy(
@@ -181,9 +168,9 @@ class ChargingScheduler:
             )
         )
 
-        # ------------------------------------------------------
+        # ======================================================
         # ESTIMATED CHARGING TIME
-        # ------------------------------------------------------
+        # ======================================================
 
         charging_minutes = (
             self.calculate_charging_time(
@@ -191,13 +178,15 @@ class ChargingScheduler:
             )
         )
 
-        # ------------------------------------------------------
+        # ======================================================
         # AVAILABLE TIME
-        # ------------------------------------------------------
+        # ======================================================
+
+        # Both variables are now guaranteed to be
+        # timezone-aware and in Asia/Kolkata.
 
         available_minutes = (
-            departure_time
-            - current_time
+            departure_time - current_time
         ).total_seconds() / 60.0
 
         available_minutes = max(
@@ -205,9 +194,9 @@ class ChargingScheduler:
             available_minutes
         )
 
-        # ------------------------------------------------------
+        # ======================================================
         # SCHEDULE STATUS
-        # ------------------------------------------------------
+        # ======================================================
 
         if charging_minutes <= available_minutes:
 
@@ -228,9 +217,9 @@ class ChargingScheduler:
 
             latest_start = current_time
 
-        # ------------------------------------------------------
+        # ======================================================
         # DEADLINE PRESSURE
-        # ------------------------------------------------------
+        # ======================================================
 
         deadline_pressure = (
             self.calculate_deadline_pressure(
@@ -239,9 +228,9 @@ class ChargingScheduler:
             )
         )
 
-        # ------------------------------------------------------
+        # ======================================================
         # RESULT
-        # ------------------------------------------------------
+        # ======================================================
 
         return {
 
