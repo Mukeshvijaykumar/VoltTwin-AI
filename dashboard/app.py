@@ -541,39 +541,41 @@ if reset:
 # HEADER
 # ============================================================
 
+# ============================================================
+# HEADER
+# ============================================================
+
 st.markdown(
     """
     <div style="
         text-align: center;
-        padding-top: 25px;
-        padding-bottom: 10px;
-        margin-top: 10px;
+        padding-top: 10px;
+        padding-bottom: 5px;
     ">
         <div style="
-            font-size: 35px; !important;
-            font-weight: 800; !important;
-            letter-spacing: 3px;
+            font-size: 16px;
+            font-weight: 800;
+            letter-spacing: 2.5px;
             color: #00E676 !important;
             text-transform: uppercase;
-            margin-bottom: 8px;
-            line-height: 1.4;
+            margin-bottom: 4px;
         ">
             ⚡ VoltTwin-AI ⚡
         </div>
         <h1 style="
-            font-size: 20px; !important;
-            font-weight: 700; !important;
+            font-size: 30px;
+            font-weight: 700;
             color: #FFFFFF !important;
             margin: 0;
             padding: 0;
-            line-height: 1.3;
+            line-height: 1.2;
         ">
             🔋 AI Smart EV Charging Control Center
         </h1>
         <p style="
-            font-size: 14px; !important;
+            font-size: 14px;
             color: #A0AAB8 !important;
-            margin-top: 8px;
+            margin-top: 6px;
             margin-bottom: 10px;
         ">
             Multi-Agent AI • Digital Twin • Virtual Smart Charger • Deadline-Aware Charging
