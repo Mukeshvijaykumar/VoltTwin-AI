@@ -100,7 +100,7 @@ st.markdown(
        3. ORIGINAL COMPACT FONT SIZES
     ------------------------------------------------------------- */
     .block-container {
-        padding-top: 1.5rem !important;
+        padding-top: 3.5rem !important;
         padding-bottom: 1.2rem;
     }
 
@@ -545,33 +545,35 @@ st.markdown(
     """
     <div style="
         text-align: center;
-        padding-top: 10px;
-        padding-bottom: 5px;
+        padding-top: 25px;
+        padding-bottom: 10px;
+        margin-top: 10px;
     ">
         <div style="
-            font-size: 16px;
-            font-weight: 800;
-            letter-spacing: 2.5px;
+            font-size: 35px; !important;
+            font-weight: 800; !important;
+            letter-spacing: 3px;
             color: #00E676 !important;
             text-transform: uppercase;
-            margin-bottom: 4px;
+            margin-bottom: 8px;
+            line-height: 1.4;
         ">
             ⚡ VoltTwin-AI ⚡
         </div>
         <h1 style="
-            font-size: 30px;
-            font-weight: 700;
+            font-size: 20px; !important;
+            font-weight: 700; !important;
             color: #FFFFFF !important;
             margin: 0;
             padding: 0;
-            line-height: 1.2;
+            line-height: 1.3;
         ">
             🔋 AI Smart EV Charging Control Center
         </h1>
         <p style="
-            font-size: 14px;
+            font-size: 14px; !important;
             color: #A0AAB8 !important;
-            margin-top: 6px;
+            margin-top: 8px;
             margin-bottom: 10px;
         ">
             Multi-Agent AI • Digital Twin • Virtual Smart Charger • Deadline-Aware Charging
