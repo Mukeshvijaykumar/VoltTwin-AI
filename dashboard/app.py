@@ -1624,9 +1624,9 @@ def charging_simulation():
             latest,
 
             "Charger_Mode",
-
+            "Charging_Mode",
             "charger_mode",
-
+            "charging_mode",
             default="IDLE"
         )
 

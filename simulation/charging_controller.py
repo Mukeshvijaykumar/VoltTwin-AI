@@ -885,7 +885,7 @@ class ChargingController:
             )
 
             self.total_cost += cost
-
+            self.last_tariff = cost_data
         # --------------------------------------------------
         # TARGET CHECK AFTER CHARGING
         # --------------------------------------------------
@@ -1188,7 +1188,51 @@ class ChargingController:
                     self.total_cost,
                     2
                 ),
+            "Tariff_Rate": round(
+                float(
+                    self.last_tariff.get(
+                        "final_rate",
+                        0.0
+                    )
+                ),
+                2
+            ),
 
+            "Final_Rate": round(
+                float(
+                    self.last_tariff.get(
+                        "final_rate",
+                        0.0
+                    )
+                ),
+                2
+            ),
+
+            "Tariff_Period":
+                self.last_tariff.get(
+                    "period",
+                    "N/A"
+                ),
+
+            "Tariff_Slab_Rate": round(
+                float(
+                    self.last_tariff.get(
+                        "slab_rate",
+                        0.0
+                    )
+                ),
+                2
+            ),
+
+            "Tariff_Multiplier": round(
+                float(
+                    self.last_tariff.get(
+                        "tod_multiplier",
+                        1.0
+                    )
+                ),
+                2
+            ),
             # ----------------------------------------------
             # THERMAL
             # ----------------------------------------------

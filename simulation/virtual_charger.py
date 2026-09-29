@@ -37,7 +37,7 @@ class VirtualCharger:
 
             self.status = "STOPPED"
             self.current = 0.0
-            self.mode = "STOPPED"
+            self.mode = mode
 
         elif action == "WAIT":
 

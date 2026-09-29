@@ -1,7 +1,6 @@
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-
 IST = ZoneInfo("Asia/Kolkata")
 
 
@@ -12,7 +11,6 @@ class ChargingScheduler:
         battery_capacity_kwh=40.0,
         charger_power_kw=7.36
     ):
-
         self.battery_capacity_kwh = float(
             battery_capacity_kwh
         )
@@ -21,35 +19,18 @@ class ChargingScheduler:
             charger_power_kw
         )
 
-    # ==========================================================
-    # TIME NORMALIZATION
-    # ==========================================================
-
     def normalize_time(self, value):
 
         if value is None:
             return datetime.now(IST)
 
-        # Convert naive datetime to IST
         if value.tzinfo is None:
-            return value.replace(
-                tzinfo=IST
-            )
+            return value.replace(tzinfo=IST)
 
-        # Convert any timezone-aware datetime to IST
         return value.astimezone(IST)
 
-    # ==========================================================
-    # CURRENT IST TIME
-    # ==========================================================
-
     def get_current_time(self):
-
         return datetime.now(IST)
-
-    # ==========================================================
-    # REQUIRED ENERGY
-    # ==========================================================
 
     def calculate_required_energy(
         self,
@@ -57,12 +38,9 @@ class ChargingScheduler:
         target_soc
     ):
 
-        current_soc = float(current_soc)
-        target_soc = float(target_soc)
-
         difference = max(
             0.0,
-            target_soc - current_soc
+            float(target_soc) - float(current_soc)
         )
 
         energy = (
@@ -71,27 +49,38 @@ class ChargingScheduler:
             / 100.0
         )
 
-        return round(
-            energy,
-            3
-        )
-
-    # ==========================================================
-    # ESTIMATED CHARGING TIME
-    # ==========================================================
+        return round(energy, 3)
 
     def calculate_charging_time(
         self,
-        required_energy
+        required_energy,
+        charging_current=None
     ):
 
-        if self.charger_power_kw <= 0:
-            return 0.0
+        # If a current is supplied, calculate the
+        # actual charger power from 230 V.
+        if charging_current is not None:
 
-        effective_power = (
-            self.charger_power_kw
-            * 0.90
-        )
+            charging_current = max(
+                0.0,
+                float(charging_current)
+            )
+
+            effective_power = (
+                230.0
+                * charging_current
+                / 1000.0
+            ) * 0.90
+
+        else:
+
+            effective_power = (
+                self.charger_power_kw
+                * 0.90
+            )
+
+        if effective_power <= 0:
+            return 0.0
 
         hours = (
             float(required_energy)
@@ -102,10 +91,6 @@ class ChargingScheduler:
             hours * 60.0,
             1
         )
-
-    # ==========================================================
-    # DEADLINE PRESSURE
-    # ==========================================================
 
     def calculate_deadline_pressure(
         self,
@@ -133,21 +118,14 @@ class ChargingScheduler:
         else:
             return "LOW"
 
-    # ==========================================================
-    # CREATE SCHEDULE
-    # ==========================================================
-
     def create_schedule(
         self,
         current_soc,
         target_soc,
         departure_time,
-        current_time=None
+        current_time=None,
+        charging_current=None
     ):
-
-        # ======================================================
-        # FORCE BOTH TIMES TO IST
-        # ======================================================
 
         current_time = self.normalize_time(
             current_time
@@ -157,10 +135,6 @@ class ChargingScheduler:
             departure_time
         )
 
-        # ======================================================
-        # REQUIRED ENERGY
-        # ======================================================
-
         required_energy = (
             self.calculate_required_energy(
                 current_soc,
@@ -168,22 +142,12 @@ class ChargingScheduler:
             )
         )
 
-        # ======================================================
-        # ESTIMATED CHARGING TIME
-        # ======================================================
-
         charging_minutes = (
             self.calculate_charging_time(
-                required_energy
+                required_energy,
+                charging_current
             )
         )
-
-        # ======================================================
-        # AVAILABLE TIME
-        # ======================================================
-
-        # Both variables are now guaranteed to be
-        # timezone-aware and in Asia/Kolkata.
 
         available_minutes = (
             departure_time - current_time
@@ -193,10 +157,6 @@ class ChargingScheduler:
             0.0,
             available_minutes
         )
-
-        # ======================================================
-        # SCHEDULE STATUS
-        # ======================================================
 
         if charging_minutes <= available_minutes:
 
@@ -217,20 +177,12 @@ class ChargingScheduler:
 
             latest_start = current_time
 
-        # ======================================================
-        # DEADLINE PRESSURE
-        # ======================================================
-
         deadline_pressure = (
             self.calculate_deadline_pressure(
                 charging_minutes,
                 available_minutes
             )
         )
-
-        # ======================================================
-        # RESULT
-        # ======================================================
 
         return {
 
@@ -271,5 +223,16 @@ class ChargingScheduler:
                 schedule_status,
 
             "deadline_pressure":
-                deadline_pressure
+                deadline_pressure,
+
+            "estimated_current":
+                (
+                    round(
+                        float(charging_current),
+                        2
+                    )
+                    if charging_current
+                    is not None
+                    else None
+                )
         }
